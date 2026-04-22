@@ -1,0 +1,29 @@
+{
+  "name": "starquake",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Near-real-time GitHub stargazing dashboard",
+  "scripts": {
+    "dev": "concurrently -n server,ui -c yellow,cyan --kill-others-on-fail \"pnpm dev:server\" \"pnpm dev:ui\"",
+    "dev:server": "cd server && cargo run",
+    "dev:ui": "pnpm --filter starquake-ui dev",
+    "build": "pnpm build:server && pnpm build:ui",
+    "build:server": "cd server && cargo build --release",
+    "build:ui": "pnpm --filter starquake-ui build",
+    "typecheck": "pnpm --filter starquake-ui typecheck",
+    "check": "pnpm check:ui && pnpm check:server",
+    "check:ui": "biome check .",
+    "check:server": "cd server && cargo fmt --check && cargo clippy -- -D warnings",
+    "test": "pnpm test:server",
+    "test:server": "cd server && cargo test",
+    "db:migrate": "echo 'no migrations yet — added in Phase 3'"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@8.15.5"
+}

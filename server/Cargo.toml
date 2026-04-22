@@ -1,0 +1,30 @@
+[package]
+name = "starquake-server"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "starquake — ingest, counter, enrichment, and WebSocket fanout"
+publish = false
+
+[dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "signal", "sync"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+dotenvy = "0.15"
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["cors"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+
+[profile.dev]
+opt-level = 0
+debug = 1

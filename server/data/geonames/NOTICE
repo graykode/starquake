@@ -1,0 +1,10 @@
+The data files in this directory (cities15000.txt, countryInfo.txt) are derived
+from the GeoNames geographical database, available at https://www.geonames.org/
+and distributed under the Creative Commons Attribution 4.0 International License
+(CC BY 4.0) — https://creativecommons.org/licenses/by/4.0/.
+
+Copyright © GeoNames. Used with attribution.
+
+starquake embeds these files at compile time to support fully offline geocoding
+of GitHub user location free-text fields. No modifications are made to the source
+data; matching logic lives in server/src/geocode.rs.
