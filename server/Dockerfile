@@ -15,6 +15,7 @@ RUN cargo build --release && rm -rf src target/release/starquake-server target/r
 # Real build
 COPY src ./src
 COPY data ./data
+COPY migrations ./migrations
 RUN touch src/main.rs && cargo build --release
 
 FROM debian:bookworm-slim
