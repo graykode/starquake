@@ -41,4 +41,13 @@ export type HistoryResponse = {
 export type TimeSeriesPoint = { t: number; stars: number };
 
 // UI-side pulse with arrival timestamp — used to rotate them out of the globe.
-export type LivePulse = { lat: number; lng: number; repo: string; actor: string; at: number };
+// `tier` is attached client-side from the current leaderboard (the server's
+// pulse message doesn't carry it); absent when the repo isn't in today's top-N.
+export type LivePulse = {
+  lat: number;
+  lng: number;
+  repo: string;
+  actor: string;
+  at: number;
+  tier?: Tier;
+};

@@ -8,7 +8,7 @@ import { TopBar } from "@/components/TopBar";
 import { TopicCloud } from "@/components/TopicCloud";
 import { useHistory } from "@/hooks/useHistory";
 import { useLeaderboard } from "@/hooks/useLeaderboard";
-import type { Entry } from "@/lib/types";
+import type { Entry, LivePulse, Tier } from "@/lib/types";
 
 const Globe = dynamic(() => import("@/components/Globe").then((m) => m.Globe), { ssr: false });
 
@@ -48,6 +48,19 @@ export default function Page() {
   const displayDate = inHistory ? viewingDate : live.board?.utc_date ?? null;
   const hoverEntry = hoverRepo ? entries.find((e) => e.repo === hoverRepo) ?? null : null;
 
+  // Attach tier to each pulse so the globe can shrink "returning" rings per
+  // CLAUDE.md "fresh gem emphasis". Pulses for repos outside the top-100
+  // carry no tier and render at the default (full) size.
+  const tierByRepo = useMemo(() => {
+    const m = new Map<string, Tier>();
+    for (const e of entries) if (e.tier) m.set(e.repo, e.tier);
+    return m;
+  }, [entries]);
+  const globePulses: LivePulse[] = useMemo(() => {
+    if (inHistory) return [];
+    return live.pulses.map((p) => ({ ...p, tier: tierByRepo.get(p.repo) }));
+  }, [inHistory, live.pulses, tierByRepo]);
+
   const canGoNext = inHistory && viewingDate! < today;
 
   return (
@@ -64,7 +77,7 @@ export default function Page() {
       />
 
       <main className="flex-1 min-h-0 flex">
-        <Globe pulses={inHistory ? [] : live.pulses} />
+        <Globe pulses={globePulses} />
 
         <section className="flex-1 min-w-0 flex flex-col bg-panel">
           <div className="px-5 pt-4 pb-2 border-b border-line">

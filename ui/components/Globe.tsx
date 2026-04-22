@@ -80,7 +80,9 @@ export function Globe({ pulses }: Props) {
         // with live geocoded pulses as they arrive.
         .ringsData(SEED_CITIES)
         .ringColor(() => (t: number) => `rgba(254,243,199,${1 - t})`)
-        .ringMaxRadius(4.5)
+        // "returning" repos get a smaller pulse per CLAUDE.md fresh-gem emphasis;
+        // seed cities and unknown-tier pulses render at the default.
+        .ringMaxRadius((d) => ((d as LivePulse).tier === "returning" ? 2.4 : 4.5))
         .ringPropagationSpeed(3)
         .ringRepeatPeriod(1600)
         .pointsData(SEED_CITIES)
@@ -99,11 +101,11 @@ export function Globe({ pulses }: Props) {
         .labelLat((d) => (d as LivePulse).lat)
         .labelLng((d) => (d as LivePulse).lng)
         .labelText((d) => (d as LivePulse).repo)
-        .labelSize(0.38)
+        .labelSize(0.9)
         .labelDotRadius(0)
         .labelColor(() => "rgba(254,243,199,0.95)")
-        .labelResolution(2)
-        .labelAltitude(0.015);
+        .labelResolution(3)
+        .labelAltitude(0.04);
 
       const mat = globe.globeMaterial() as MeshPhongMaterial;
       mat.color = new THREE.Color(0x13131a);
