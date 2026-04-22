@@ -123,7 +123,7 @@ export function TopBar({ connected, utcDate, totalRepos, totalStars }: Props) {
         <span className="tabular-nums">
           {repoStars != null ? repoStars.toLocaleString() : "—"}
         </span>
-        <span className="hidden lg:inline text-dim group-hover:text-fg">· give me a star!</span>
+        <span className="hidden lg:inline text-dim group-hover:text-fg">· send a pulse</span>
       </a>
     </header>
   );

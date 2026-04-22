@@ -19,6 +19,7 @@ const SEED_CITIES: { lat: number; lng: number }[] = [
 const COUNTRIES_URL =
   "https://cdn.jsdelivr.net/gh/janarosmonaliev/github-globe@master/src/files/globe-data-min.json";
 const PULSE_WINDOW_MS = 25_000; // show pulses from the last 25 seconds
+const LABEL_WINDOW_MS = 3_000; // labels flash for 3s — long enough to read, short enough to not pile up
 
 type CountryFeature = { type: string; properties: Record<string, unknown>; geometry: unknown };
 
@@ -93,7 +94,16 @@ export function Globe({ pulses }: Props) {
         .arcDashInitialGap((d) => (d as { initialGap: number }).initialGap)
         .arcDashAnimateTime(2200)
         .arcStroke(0.28)
-        .arcAltitudeAutoScale(0.5);
+        .arcAltitudeAutoScale(0.5)
+        .labelsData([])
+        .labelLat((d) => (d as LivePulse).lat)
+        .labelLng((d) => (d as LivePulse).lng)
+        .labelText((d) => (d as LivePulse).repo)
+        .labelSize(0.38)
+        .labelDotRadius(0)
+        .labelColor(() => "rgba(254,243,199,0.95)")
+        .labelResolution(2)
+        .labelAltitude(0.015);
 
       const mat = globe.globeMaterial() as MeshPhongMaterial;
       mat.color = new THREE.Color(0x13131a);
@@ -192,6 +202,26 @@ export function Globe({ pulses }: Props) {
     const live = pulses.filter((p) => now - p.at <= PULSE_WINDOW_MS);
     const data = live.length > 0 ? live : SEED_CITIES;
     globe.ringsData(data).pointsData(data);
+  }, [pulses]);
+
+  // repo labels: short TTL, dedupe so the same repo doesn't stack in one spot.
+  // Re-filtered on an interval so stale labels drop off even during quiet moments.
+  useEffect(() => {
+    const globe = globeRef.current;
+    if (!globe) return;
+    const applyLabels = () => {
+      const now = Date.now();
+      const byRepo = new Map<string, LivePulse>();
+      for (const p of pulses) {
+        if (now - p.at > LABEL_WINDOW_MS) continue;
+        const prev = byRepo.get(p.repo);
+        if (!prev || p.at > prev.at) byRepo.set(p.repo, p);
+      }
+      globe.labelsData(Array.from(byRepo.values()));
+    };
+    applyLabels();
+    const id = setInterval(applyLabels, 500);
+    return () => clearInterval(id);
   }, [pulses]);
 
   return (
