@@ -142,14 +142,21 @@ export default function Page() {
             </div>
           </div>
 
-          {!inHistory && (
-            <>
-              <BarRace entries={entries} hoverRepo={hoverRepo} onHover={(r) => setHoverRepo(r)} />
-              <div className="border-b border-line" />
-            </>
-          )}
+          {/* Bar race stays mounted in history mode so the layout matches live
+              (CLAUDE.md) — the spring/flash animations are no-ops without
+              incoming ticks, which reads as a frozen end-of-day snapshot. The
+              `key` resets internal flash state so crossing live↔history
+              doesn't spuriously flash every row. */}
+          <BarRace
+            key={inHistory ? `h-${viewingDate}` : "live"}
+            entries={entries}
+            hoverRepo={hoverRepo}
+            onHover={(r) => setHoverRepo(r)}
+          />
+          <div className="border-b border-line" />
 
           <LeaderboardList
+            key={inHistory ? `lh-${viewingDate}` : "llive"}
             entries={entries}
             hoverRepo={hoverRepo}
             onHover={(repo, x, y) => {
