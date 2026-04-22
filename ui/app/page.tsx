@@ -91,7 +91,9 @@ export default function Page() {
                     ? "loading…"
                     : history.error
                       ? "failed to load"
-                      : `end-of-day top ${entries.length}`
+                      : entries.length === 0
+                        ? "no snapshot for this date"
+                        : `end-of-day top ${entries.length}`
                   : "top 8 live · top 100 listed below"}
               </div>
 

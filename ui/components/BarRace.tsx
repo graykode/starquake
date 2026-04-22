@@ -54,12 +54,11 @@ export function BarRace({ entries, hoverRepo, onHover }: Props) {
     return () => clearTimeout(t);
   }, [top]);
 
+  // Empty state is intentionally minimal — the section header above carries
+  // the contextual message (loading / no snapshot / waiting) so BarRace just
+  // reserves a little vertical space without a repeated label.
   if (top.length === 0) {
-    return (
-      <div className="px-5 py-6 text-[12px] text-muted font-mono">
-        waiting for first snapshot…
-      </div>
-    );
+    return <div className="h-3" />;
   }
 
   return (
