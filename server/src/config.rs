@@ -7,6 +7,9 @@ pub struct Config {
     /// to permissive (accept any) — fine for dev, a mistake in prod. Example:
     /// `CORS_ALLOWED_ORIGINS=https://graykode.github.io`
     pub allowed_origins: Option<Vec<String>>,
+    /// Postgres URL (Railway injects it). If unset, the server runs fully
+    /// in-memory — acceptable for local dev, not for production persistence.
+    pub database_url: Option<String>,
 }
 
 impl Config {
@@ -31,6 +34,11 @@ impl Config {
             if list.is_empty() { None } else { Some(list) }
         });
 
-        Ok(Self { port, github_token, allowed_origins })
+        let database_url = std::env::var("DATABASE_URL")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        Ok(Self { port, github_token, allowed_origins, database_url })
     }
 }

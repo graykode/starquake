@@ -1,4 +1,5 @@
 mod config;
+mod db;
 mod enrich;
 mod geocode;
 mod ingest;
@@ -26,12 +27,31 @@ async fn main() -> Result<()> {
         .init();
 
     let cfg = config::Config::from_env()?;
-    let state = Arc::new(AppState::new());
+
+    let db_pool = match &cfg.database_url {
+        Some(url) => match db::connect(url).await {
+            Ok(pool) => Some(pool),
+            Err(e) => {
+                // Fail hard: if DATABASE_URL is set we expect persistence. Local
+                // dev without Postgres should simply unset the var.
+                tracing::error!(error = %e, "DATABASE_URL set but connection failed");
+                return Err(e);
+            }
+        },
+        None => {
+            tracing::warn!("DATABASE_URL unset — running fully in-memory (counter + caches reset on restart)");
+            None
+        }
+    };
+
+    let state = Arc::new(AppState::new(db_pool.clone()));
+    state.hydrate().await?;
     let geocoder = Arc::new(geocode::Geocoder::build());
 
     tracing::info!(
         port = cfg.port,
         token_suffix = &cfg.github_token[cfg.github_token.len().saturating_sub(4)..],
+        persistence = db_pool.is_some(),
         "starquake server starting"
     );
 
@@ -73,6 +93,7 @@ async fn main() -> Result<()> {
     let enrich_state = state.clone();
     let locate_state = state.clone();
     let broadcast_state = state.clone();
+    let snapshot_state = state.clone();
     let token_ingest = cfg.github_token.clone();
     let token_enrich = cfg.github_token.clone();
     let token_locate = cfg.github_token.clone();
@@ -90,6 +111,9 @@ async fn main() -> Result<()> {
         _ = ws::broadcast_loop(broadcast_state) => {
             tracing::warn!("broadcast_loop exited unexpectedly");
         }
+        _ = counter_snapshot_loop(snapshot_state) => {
+            tracing::warn!("counter_snapshot_loop exited unexpectedly");
+        }
         res = axum::serve(listener, app) => {
             if let Err(e) = res { tracing::error!(error = %e, "http server exited"); }
         }
@@ -99,4 +123,22 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Periodically snapshots the in-memory counter to Postgres so a restart
+/// doesn't wipe today's accumulated stars. No-op when `DATABASE_URL` is unset.
+/// The 60s cadence is a budget/RTO trade: at 100k repos the UNNEST upsert is
+/// cheap, and losing ≤60s of counts on a crash is within the Events API's own
+/// lag envelope.
+async fn counter_snapshot_loop(state: Arc<AppState>) {
+    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // Skip the immediate first tick — hydration just ran, nothing to snapshot yet.
+    ticker.tick().await;
+    loop {
+        ticker.tick().await;
+        if let Err(e) = state.snapshot_counter().await {
+            tracing::warn!(error = %e, "counter snapshot failed");
+        }
+    }
 }

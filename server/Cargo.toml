@@ -19,6 +19,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["cors"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "json", "migrate"] }
 
 [profile.release]
 lto = "thin"

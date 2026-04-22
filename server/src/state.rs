@@ -1,17 +1,30 @@
 //! Shared application state.
 //!
-//! For Phase 2, the counter is a simple in-memory `HashMap<repo, count>` keyed by the
-//! current UTC date. Rolling at UTC 00:00 is implemented by noticing the date change
-//! inside `record_watch` and clearing the map. Phase 3 will layer Postgres persistence
-//! (`daily_top` snapshots) on top of this.
+//! The counter is an in-memory `HashMap<repo, count>` keyed by the current UTC
+//! date. Rolling at UTC 00:00 is implemented by noticing the date change inside
+//! `record_watch` and clearing the map.
 //!
-//! Phase 4 adds `RepoMeta` cache populated by the `enrich` task (GraphQL batch).
+//! **Phase 7.6 — Postgres restart safety (not raw event persistence):** when
+//! `DATABASE_URL` is set, AppState holds a `PgPool` and exposes three
+//! persistence surfaces:
+//!   - `hydrate()` on startup loads today's `live_counter`, all
+//!     `user_location`, and all fresh `repo_metadata` rows so a redeploy
+//!     resumes mid-day without losing accumulated stars or re-geocoding users.
+//!   - `upsert_meta` / `upsert_user_location` write through so enrichment and
+//!     geocoding results survive restarts immediately.
+//!   - `snapshot_counter()` is called by a 60s background task and bulk-upserts
+//!     today's counter into `live_counter` via UNNEST (single round trip).
 //!
-//! All events are counted — the leaderboard's top-100 is a read-time projection over
-//! the full counter (CLAUDE.md Rule 10).
+//! Raw `WatchEvent`s are still ephemeral (Rule 13) — only aggregates persist.
+//! Without `DATABASE_URL`, AppState runs fully in-memory (local dev path).
+//!
+//! All events are counted — the leaderboard's top-100 is a read-time projection
+//! over the full counter (CLAUDE.md Rule 10).
 
-use chrono::Utc;
+use anyhow::{Context, Result};
+use chrono::{NaiveDate, Utc};
 use serde::Serialize;
+use sqlx::PgPool;
 use std::collections::HashMap;
 use tokio::sync::{broadcast, RwLock};
 
@@ -72,19 +85,147 @@ pub struct AppState {
     current_utc_date: RwLock<String>,
     meta: RwLock<HashMap<String, RepoMeta>>,
     user_location: RwLock<HashMap<String, UserLocation>>,
+    db: Option<PgPool>,
     pub tx: broadcast::Sender<ServerMessage>,
 }
 
 impl AppState {
-    pub fn new() -> Self {
+    pub fn new(db: Option<PgPool>) -> Self {
         let (tx, _) = broadcast::channel(BROADCAST_CHANNEL_CAPACITY);
         Self {
             counter: RwLock::new(HashMap::new()),
             current_utc_date: RwLock::new(Utc::now().date_naive().to_string()),
             meta: RwLock::new(HashMap::new()),
             user_location: RwLock::new(HashMap::new()),
+            db,
             tx,
         }
+    }
+
+    /// Load today's counter + all cached geocoding + all fresh repo metadata
+    /// from Postgres so a restart resumes mid-day cleanly. Safe to call with a
+    /// fresh DB (all three queries return zero rows).
+    pub async fn hydrate(&self) -> Result<()> {
+        let Some(pool) = &self.db else { return Ok(()) };
+
+        let today: NaiveDate = Utc::now().date_naive();
+
+        let counter_rows: Vec<(String, i32)> =
+            sqlx::query_as("SELECT repo, stars FROM live_counter WHERE utc_date = $1")
+                .bind(today)
+                .fetch_all(pool)
+                .await
+                .context("hydrate live_counter")?;
+        let counter_len = counter_rows.len();
+        {
+            let mut counter = self.counter.write().await;
+            for (repo, stars) in counter_rows {
+                counter.insert(repo, stars.max(0) as u32);
+            }
+        }
+
+        let loc_rows: Vec<(String, Option<f64>, Option<f64>)> =
+            sqlx::query_as("SELECT login, lat, lng FROM user_location")
+                .fetch_all(pool)
+                .await
+                .context("hydrate user_location")?;
+        let loc_len = loc_rows.len();
+        {
+            let mut locs = self.user_location.write().await;
+            for (login, lat, lng) in loc_rows {
+                let loc = match (lat, lng) {
+                    (Some(lat), Some(lng)) => UserLocation::Resolved { lat, lng },
+                    _ => UserLocation::Unresolved,
+                };
+                locs.insert(login, loc);
+            }
+        }
+
+        // Only hydrate metadata fetched within the 24h TTL — stale rows will
+        // refetch naturally through the enrich loop.
+        type MetaRow = (
+            String,
+            Option<String>,
+            Option<String>,
+            Option<i32>,
+            sqlx::types::Json<Vec<String>>,
+        );
+        let meta_rows: Vec<MetaRow> = sqlx::query_as(
+            "SELECT full_name, description, language, total_stars, topics \
+             FROM repo_metadata \
+             WHERE fetched_at > NOW() - INTERVAL '24 hours'",
+        )
+        .fetch_all(pool)
+        .await
+        .context("hydrate repo_metadata")?;
+        let meta_len = meta_rows.len();
+        {
+            let mut meta = self.meta.write().await;
+            for (repo, description, language, total_stars, topics) in meta_rows {
+                meta.insert(
+                    repo,
+                    RepoMeta {
+                        description,
+                        language,
+                        total_stars: total_stars.map(|n| n.max(0) as u32),
+                        topics: topics.0,
+                    },
+                );
+            }
+        }
+
+        tracing::info!(
+            utc_date = %today,
+            counter = counter_len,
+            user_location = loc_len,
+            repo_metadata = meta_len,
+            "hydrated from postgres"
+        );
+        Ok(())
+    }
+
+    /// Bulk-upsert the current counter into `live_counter` for today. Called
+    /// from a 60s background task. Uses `UNNEST` so the whole table round-trips
+    /// in one query regardless of key count.
+    pub async fn snapshot_counter(&self) -> Result<()> {
+        let Some(pool) = &self.db else { return Ok(()) };
+
+        let today: NaiveDate = Utc::now().date_naive();
+        let (repos, stars): (Vec<String>, Vec<i32>) = {
+            let counter = self.counter.read().await;
+            let mut pairs: Vec<(String, i32)> = counter
+                .iter()
+                .map(|(repo, count)| (repo.clone(), *count as i32))
+                .collect();
+            pairs.sort_by(|a, b| a.0.cmp(&b.0));
+            let mut repos = Vec::with_capacity(pairs.len());
+            let mut stars = Vec::with_capacity(pairs.len());
+            for (repo, count) in pairs {
+                repos.push(repo);
+                stars.push(count);
+            }
+            (repos, stars)
+        };
+
+        if repos.is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query(
+            "INSERT INTO live_counter (utc_date, repo, stars) \
+             SELECT $1::date, repo, stars \
+             FROM UNNEST($2::text[], $3::int[]) AS t(repo, stars) \
+             ON CONFLICT (utc_date, repo) DO UPDATE SET stars = EXCLUDED.stars",
+        )
+        .bind(today)
+        .bind(&repos)
+        .bind(&stars)
+        .execute(pool)
+        .await
+        .context("snapshot live_counter")?;
+
+        tracing::debug!(utc_date = %today, rows = repos.len(), "counter snapshot written");
+        Ok(())
     }
 
     pub async fn user_location(&self, login: &str) -> Option<UserLocation> {
@@ -92,7 +233,27 @@ impl AppState {
     }
 
     pub async fn upsert_user_location(&self, login: String, loc: UserLocation) {
-        self.user_location.write().await.insert(login, loc);
+        self.user_location.write().await.insert(login.clone(), loc);
+        if let Some(pool) = &self.db {
+            let (lat, lng) = match loc {
+                UserLocation::Resolved { lat, lng } => (Some(lat), Some(lng)),
+                UserLocation::Unresolved => (None, None),
+            };
+            if let Err(e) = sqlx::query(
+                "INSERT INTO user_location (login, lat, lng, resolved_at) \
+                 VALUES ($1, $2, $3, NOW()) \
+                 ON CONFLICT (login) DO UPDATE \
+                 SET lat = EXCLUDED.lat, lng = EXCLUDED.lng, resolved_at = NOW()",
+            )
+            .bind(&login)
+            .bind(lat)
+            .bind(lng)
+            .execute(pool)
+            .await
+            {
+                tracing::warn!(error = %e, login = %login, "user_location write-through failed");
+            }
+        }
     }
 
     pub async fn record_watch(&self, repo: &str) {
@@ -119,7 +280,28 @@ impl AppState {
     }
 
     pub async fn upsert_meta(&self, repo: String, meta: RepoMeta) {
-        self.meta.write().await.insert(repo, meta);
+        self.meta.write().await.insert(repo.clone(), meta.clone());
+        if let Some(pool) = &self.db {
+            let topics = sqlx::types::Json(meta.topics);
+            if let Err(e) = sqlx::query(
+                "INSERT INTO repo_metadata (full_name, description, language, total_stars, topics, fetched_at) \
+                 VALUES ($1, $2, $3, $4, $5, NOW()) \
+                 ON CONFLICT (full_name) DO UPDATE \
+                 SET description = EXCLUDED.description, language = EXCLUDED.language, \
+                     total_stars = EXCLUDED.total_stars, topics = EXCLUDED.topics, \
+                     fetched_at = NOW()",
+            )
+            .bind(&repo)
+            .bind(&meta.description)
+            .bind(&meta.language)
+            .bind(meta.total_stars.map(|n| n as i32))
+            .bind(&topics)
+            .execute(pool)
+            .await
+            {
+                tracing::warn!(error = %e, repo = %repo, "repo_metadata write-through failed");
+            }
+        }
     }
 
     pub async fn snapshot(&self, top_n: usize) -> ServerMessage {
@@ -164,6 +346,6 @@ impl AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
