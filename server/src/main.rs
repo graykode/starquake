@@ -94,6 +94,7 @@ async fn main() -> Result<()> {
     let locate_state = state.clone();
     let broadcast_state = state.clone();
     let snapshot_state = state.clone();
+    let roll_state = state.clone();
     let token_ingest = cfg.github_token.clone();
     let token_enrich = cfg.github_token.clone();
     let token_locate = cfg.github_token.clone();
@@ -113,6 +114,9 @@ async fn main() -> Result<()> {
         }
         _ = counter_snapshot_loop(snapshot_state) => {
             tracing::warn!("counter_snapshot_loop exited unexpectedly");
+        }
+        _ = daily_top_roll_loop(roll_state) => {
+            tracing::warn!("daily_top_roll_loop exited unexpectedly");
         }
         res = axum::serve(listener, app) => {
             if let Err(e) = res { tracing::error!(error = %e, "http server exited"); }
@@ -139,6 +143,35 @@ async fn counter_snapshot_loop(state: Arc<AppState>) {
         ticker.tick().await;
         if let Err(e) = state.snapshot_counter().await {
             tracing::warn!(error = %e, "counter snapshot failed");
+        }
+    }
+}
+
+/// Hourly daily-top roll. At every tick picks the most recent *finished* UTC
+/// date (accounting for the 1-hour grace window: before UTC 01:00 we treat
+/// yesterday as still in-progress) and archives its top-100 to `daily_top`.
+/// `roll_daily_top` is idempotent (`ON CONFLICT DO NOTHING`), so re-running on
+/// startup or after a missed window is safe and self-healing.
+async fn daily_top_roll_loop(state: Arc<AppState>) {
+    use chrono::{Duration as ChronoDuration, NaiveTime};
+
+    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(3600));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        let now = chrono::Utc::now();
+        // Before UTC 01:00, yesterday is still accepting late events — the
+        // grace window defers the snapshot to the *previous* yesterday.
+        let grace = NaiveTime::from_hms_opt(1, 0, 0).expect("valid time");
+        let target = if now.time() < grace {
+            now.date_naive() - ChronoDuration::days(2)
+        } else {
+            now.date_naive() - ChronoDuration::days(1)
+        };
+        match state.roll_daily_top(target).await {
+            Ok(n) if n > 0 => tracing::info!(utc_date = %target, rows = n, "daily_top rolled"),
+            Ok(_) => tracing::debug!(utc_date = %target, "daily_top roll no-op (already archived)"),
+            Err(e) => tracing::warn!(error = %e, utc_date = %target, "daily_top roll failed"),
         }
     }
 }

@@ -22,7 +22,7 @@
 //! over the full counter (CLAUDE.md Rule 10).
 
 use anyhow::{Context, Result};
-use chrono::{NaiveDate, Utc};
+use chrono::{Duration as ChronoDuration, NaiveDate, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -38,6 +38,19 @@ pub struct RepoMeta {
     pub topics: Vec<String>,
 }
 
+/// CLAUDE.md "fresh gem emphasis" — rendered in the UI as opacity + pulse
+/// size. `Fresh` = the gem bucket (no row in `daily_top` within 30 days).
+/// `Streak` = genuinely trending (≥3 consecutive UTC days including today).
+/// `Returning` = appeared within 30 days but not on a current streak; dimmed.
+/// Absent tier (no DB configured) renders as full brightness.
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Tier {
+    Fresh,
+    Streak,
+    Returning,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Entry {
     pub rank: u32,
@@ -51,6 +64,8 @@ pub struct Entry {
     pub total_stars: Option<u32>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub topics: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier: Option<Tier>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -314,13 +329,18 @@ impl AppState {
         items.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         items.truncate(top_n);
 
+        let repos: Vec<String> = items.iter().map(|(r, _)| r.clone()).collect();
+        let tier_map = self.compute_tiers(&repos).await;
+
         let entries: Vec<Entry> = items
             .into_iter()
             .enumerate()
             .map(|(i, (repo, stars))| {
                 let m = meta.get(&repo).cloned().unwrap_or_default();
+                let tier = tier_map.get(&repo).copied();
                 Entry {
                     rank: (i as u32) + 1,
+                    tier,
                     repo,
                     stars,
                     description: m.description,
@@ -341,6 +361,84 @@ impl AppState {
             total_stars_today: total_stars,
             entries,
         }
+    }
+
+    /// Pull last-30-day `daily_top` rows for the given repos and classify each
+    /// as `Fresh` / `Streak` / `Returning` per CLAUDE.md. Returns empty when
+    /// there's no DB or when the query fails (non-fatal — UI just renders at
+    /// full brightness). One indexed query covers the whole top-N.
+    async fn compute_tiers(&self, repos: &[String]) -> HashMap<String, Tier> {
+        let Some(pool) = &self.db else { return HashMap::new() };
+        if repos.is_empty() {
+            return HashMap::new();
+        }
+        let today: NaiveDate = Utc::now().date_naive();
+        let cutoff = today - ChronoDuration::days(30);
+
+        let rows: Result<Vec<(String, NaiveDate)>, _> = sqlx::query_as(
+            "SELECT repo, utc_date FROM daily_top \
+             WHERE repo = ANY($1) AND utc_date >= $2 AND utc_date < $3",
+        )
+        .bind(repos)
+        .bind(cutoff)
+        .bind(today)
+        .fetch_all(pool)
+        .await;
+
+        let rows = match rows {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(error = %e, "tier lookup failed; falling back to untiered");
+                return HashMap::new();
+            }
+        };
+
+        let yesterday = today - ChronoDuration::days(1);
+        let day_before = today - ChronoDuration::days(2);
+        let mut by_repo: HashMap<String, Vec<NaiveDate>> = HashMap::new();
+        for (repo, date) in rows {
+            by_repo.entry(repo).or_default().push(date);
+        }
+
+        let mut out = HashMap::with_capacity(repos.len());
+        for repo in repos {
+            let tier = match by_repo.get(repo) {
+                None => Tier::Fresh,
+                Some(dates) => {
+                    let on_streak =
+                        dates.contains(&yesterday) && dates.contains(&day_before);
+                    if on_streak { Tier::Streak } else { Tier::Returning }
+                }
+            };
+            out.insert(repo.clone(), tier);
+        }
+        out
+    }
+
+    /// Archive `target_date`'s top-100 from `live_counter` into `daily_top`,
+    /// joined with `repo_metadata` for topics. Idempotent via `ON CONFLICT`:
+    /// safe to run on every tick of the hourly roll loop, and safe to run on
+    /// catchup after a missed window. No-op when DB is absent.
+    pub async fn roll_daily_top(&self, target_date: NaiveDate) -> Result<u64> {
+        let Some(pool) = &self.db else { return Ok(0) };
+
+        let res = sqlx::query(
+            "INSERT INTO daily_top (utc_date, repo, stars, topics) \
+             SELECT lc.utc_date, lc.repo, lc.stars, \
+                    COALESCE(rm.topics, '[]'::jsonb) \
+             FROM live_counter lc \
+             LEFT JOIN repo_metadata rm ON rm.full_name = lc.repo \
+             WHERE lc.utc_date = $1 \
+             ORDER BY lc.stars DESC, lc.repo ASC \
+             LIMIT 100 \
+             ON CONFLICT (utc_date, repo) DO NOTHING",
+        )
+        .bind(target_date)
+        .execute(pool)
+        .await
+        .context("roll daily_top")?;
+
+        Ok(res.rows_affected())
     }
 }
 

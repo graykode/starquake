@@ -1,3 +1,5 @@
+export type Tier = "fresh" | "streak" | "returning";
+
 export type Entry = {
   rank: number;
   repo: string;
@@ -6,6 +8,7 @@ export type Entry = {
   language?: string | null;
   total_stars?: number | null;
   topics?: string[];
+  tier?: Tier;
 };
 
 export type Leaderboard = {

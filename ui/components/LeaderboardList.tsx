@@ -1,7 +1,7 @@
 "use client";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import type { Entry } from "@/lib/types";
+import type { Entry, Tier } from "@/lib/types";
 
 const LINE_PALETTE = [
   "#fbbf24",
@@ -29,6 +29,25 @@ const LANG_COLORS: Record<string, string> = {
 };
 
 const FLASH_MS = 650;
+
+// CLAUDE.md fresh-gem emphasis: fresh = primary, streak = normal, returning = dimmed.
+function tierBadge(tier: Tier | undefined) {
+  if (tier === "fresh") {
+    return {
+      label: "fresh",
+      className:
+        "text-[9px] uppercase tracking-wider font-medium px-1.5 py-px rounded border border-accent/40 text-accent bg-accent/10",
+    };
+  }
+  if (tier === "streak") {
+    return {
+      label: "streak",
+      className:
+        "text-[9px] uppercase tracking-wider font-medium px-1.5 py-px rounded border border-sky-400/30 text-sky-300 bg-sky-400/10",
+    };
+  }
+  return null;
+}
 
 type Props = {
   entries: Entry[];
@@ -89,6 +108,8 @@ export function LeaderboardList({ entries, hoverRepo, onHover }: Props) {
             const name = nameRest.join("/");
             const langColor = e.language ? LANG_COLORS[e.language] ?? "#999" : null;
             const flash = flashRepos.has(e.repo);
+            const dimmed = e.tier === "returning";
+            const badge = tierBadge(e.tier);
 
             return (
               <motion.div
@@ -96,7 +117,7 @@ export function LeaderboardList({ entries, hoverRepo, onHover }: Props) {
                 layout
                 transition={{ layout: { type: "spring", stiffness: 480, damping: 38 } }}
                 initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
+                animate={{ opacity: dimmed ? 0.5 : 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 onMouseEnter={(ev) => onHover(e.repo, ev.clientX, ev.clientY)}
                 onMouseMove={(ev) => onHover(e.repo, ev.clientX, ev.clientY)}
@@ -137,9 +158,14 @@ export function LeaderboardList({ entries, hoverRepo, onHover }: Props) {
                   style={{ background: color }}
                 />
                 <div className="flex-1 min-w-0 flex flex-col">
-                  <div className="font-mono truncate text-fg">
-                    <span className="text-muted">{owner}/</span>
-                    <span>{name}</span>
+                  <div className="font-mono truncate text-fg flex items-center gap-2">
+                    <span className="truncate">
+                      <span className="text-muted">{owner}/</span>
+                      <span>{name}</span>
+                    </span>
+                    {badge && (
+                      <span className={badge.className + " shrink-0"}>{badge.label}</span>
+                    )}
                   </div>
                   {e.description && (
                     <div className="text-[11px] text-muted/80 truncate mt-0.5 leading-snug">
