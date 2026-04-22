@@ -415,6 +415,52 @@ impl AppState {
         out
     }
 
+    /// Return the top-100 leaderboard for a finished UTC date from
+    /// `daily_top`, joined with the (current) `repo_metadata` for description /
+    /// language / total_stars. Topics come from the row itself — they were
+    /// frozen at roll time so the history view doesn't drift if a repo later
+    /// retags. Returns empty when the date has no snapshot (pre-launch, data
+    /// loss, or just a date that never had activity).
+    pub async fn history_entries(&self, date: NaiveDate) -> Result<Vec<Entry>> {
+        let Some(pool) = &self.db else { return Ok(Vec::new()) };
+        type HistoryRow = (
+            String,
+            i32,
+            sqlx::types::Json<Vec<String>>,
+            Option<String>,
+            Option<String>,
+            Option<i32>,
+        );
+        let rows: Vec<HistoryRow> = sqlx::query_as(
+            "SELECT dt.repo, dt.stars, dt.topics, \
+                    rm.description, rm.language, rm.total_stars \
+             FROM daily_top dt \
+             LEFT JOIN repo_metadata rm ON rm.full_name = dt.repo \
+             WHERE dt.utc_date = $1 \
+             ORDER BY dt.stars DESC, dt.repo ASC \
+             LIMIT 100",
+        )
+        .bind(date)
+        .fetch_all(pool)
+        .await
+        .context("history lookup")?;
+
+        Ok(rows
+            .into_iter()
+            .enumerate()
+            .map(|(i, (repo, stars, topics, description, language, total_stars))| Entry {
+                rank: (i as u32) + 1,
+                repo,
+                stars: stars.max(0) as u32,
+                description,
+                language,
+                total_stars: total_stars.map(|n| n.max(0) as u32),
+                topics: topics.0,
+                tier: None,
+            })
+            .collect())
+    }
+
     /// Archive `target_date`'s top-100 from `live_counter` into `daily_top`,
     /// joined with `repo_metadata` for topics. Idempotent via `ON CONFLICT`:
     /// safe to run on every tick of the hourly roll loop, and safe to run on

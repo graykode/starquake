@@ -30,6 +30,14 @@ export type Pulse = {
 
 export type ServerMessage = Leaderboard | Pulse;
 
+// /history?date=YYYY-MM-DD response. Past dates come from `daily_top`; today
+// comes from the live counter — same shape either way so the UI can render
+// with one code path.
+export type HistoryResponse = {
+  utc_date: string;
+  entries: Entry[];
+};
+
 export type TimeSeriesPoint = { t: number; stars: number };
 
 // UI-side pulse with arrival timestamp — used to rotate them out of the globe.

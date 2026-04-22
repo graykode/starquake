@@ -8,8 +8,16 @@ mod state;
 mod ws;
 
 use anyhow::Result;
-use axum::{http::HeaderValue, routing::get, Router};
-use state::AppState;
+use axum::{
+    extract::{Query, State},
+    http::{HeaderValue, Method, StatusCode},
+    response::Json,
+    routing::get,
+    Router,
+};
+use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
+use state::{AppState, Entry};
 use std::sync::Arc;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -68,7 +76,9 @@ async fn main() -> Result<()> {
                 })
                 .collect();
             tracing::info!(allowed_origins = ?origins, "CORS: restricted");
-            CorsLayer::new().allow_origin(AllowOrigin::list(parsed))
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::list(parsed))
+                .allow_methods([Method::GET])
         }
         None => {
             tracing::warn!("CORS: permissive (no CORS_ALLOWED_ORIGINS set) — fine for dev only");
@@ -78,6 +88,7 @@ async fn main() -> Result<()> {
 
     let app = Router::new()
         .route("/ws", get(ws::ws_handler))
+        .route("/history", get(history_handler))
         .route("/health", get(|| async { "ok" }))
         .with_state(state.clone())
         .layer(cors);
@@ -127,6 +138,51 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Deserialize)]
+struct HistoryQuery {
+    date: String,
+}
+
+#[derive(Serialize)]
+struct HistoryResponse {
+    utc_date: String,
+    entries: Vec<Entry>,
+}
+
+/// GET /history?date=YYYY-MM-DD — returns the top-100 leaderboard for the
+/// requested UTC date. For today, serves the live in-memory counter (same
+/// payload shape as the WS `leaderboard` message, minus the `type` tag).
+/// For finished days, reads from `daily_top`. Empty entries for dates
+/// with no snapshot (pre-launch, data loss); CLAUDE.md allows backfill via
+/// a one-time BigQuery job but that's out of the serving path.
+async fn history_handler(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<HistoryQuery>,
+) -> Result<Json<HistoryResponse>, StatusCode> {
+    let date = NaiveDate::parse_from_str(&q.date, "%Y-%m-%d")
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let today = chrono::Utc::now().date_naive();
+    let entries = if date == today {
+        match state.snapshot(100).await {
+            state::ServerMessage::Leaderboard { entries, .. } => entries,
+            _ => Vec::new(),
+        }
+    } else if date > today {
+        return Err(StatusCode::BAD_REQUEST);
+    } else {
+        state.history_entries(date).await.map_err(|e| {
+            tracing::warn!(error = %e, date = %date, "history query failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+    };
+
+    Ok(Json(HistoryResponse {
+        utc_date: date.to_string(),
+        entries,
+    }))
 }
 
 /// Periodically snapshots the in-memory counter to Postgres so a restart

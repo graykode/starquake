@@ -14,7 +14,7 @@ export type LeaderboardState = {
   pulses: LivePulse[];
 };
 
-export function useLeaderboard(): LeaderboardState {
+export function useLeaderboard(enabled: boolean = true): LeaderboardState {
   const [board, setBoard] = useState<Leaderboard | null>(null);
   const [connected, setConnected] = useState(false);
   const [series, setSeries] = useState<Map<string, TimeSeriesPoint[]>>(new Map());
@@ -23,6 +23,15 @@ export function useLeaderboard(): LeaderboardState {
   seriesRef.current = series;
 
   useEffect(() => {
+    if (!enabled) {
+      // Clear live state and keep the socket closed while in history mode so
+      // the past-date view doesn't get a stale "today" board underneath.
+      setBoard(null);
+      setConnected(false);
+      setPulses([]);
+      return;
+    }
+
     let cancelled = false;
     let ws: WebSocket | null = null;
     let reconnect: ReturnType<typeof setTimeout> | null = null;
@@ -81,7 +90,7 @@ export function useLeaderboard(): LeaderboardState {
       if (reconnect) clearTimeout(reconnect);
       ws?.close();
     };
-  }, []);
+  }, [enabled]);
 
   return { board, connected, series, pulses };
 }
