@@ -31,6 +31,8 @@ const LANG_COLORS: Record<string, string> = {
 const FLASH_MS = 650;
 
 // CLAUDE.md fresh-gem emphasis: fresh = primary, streak = normal, returning = dimmed.
+// Every tier now carries a badge (returning kept visually subtle) so the row's
+// tier is always legible — mirrors the filter chips.
 function tierBadge(tier: Tier | undefined) {
   if (tier === "fresh") {
     return {
@@ -46,6 +48,14 @@ function tierBadge(tier: Tier | undefined) {
       tip: "On a run — top-100 for 3+ consecutive UTC days including today.",
       className:
         "text-[9px] uppercase tracking-wider font-medium px-1.5 py-px rounded border border-sky-400/30 text-sky-300 bg-sky-400/10",
+    };
+  }
+  if (tier === "returning") {
+    return {
+      label: "returning",
+      tip: "Back again — appeared in daily_top in the last 30 days, not on a current streak.",
+      className:
+        "text-[9px] uppercase tracking-wider font-medium px-1.5 py-px rounded border border-white/15 text-fg/70 bg-white/5",
     };
   }
   return null;
