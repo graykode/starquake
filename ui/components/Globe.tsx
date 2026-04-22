@@ -19,7 +19,7 @@ const SEED_CITIES: { lat: number; lng: number }[] = [
 const COUNTRIES_URL =
   "https://cdn.jsdelivr.net/gh/janarosmonaliev/github-globe@master/src/files/globe-data-min.json";
 const PULSE_WINDOW_MS = 25_000; // show pulses from the last 25 seconds
-const LABEL_WINDOW_MS = 3_000; // labels flash for 3s — long enough to read, short enough to not pile up
+const LABEL_WINDOW_MS = 8_000; // labels linger 8s — readable during low pulse rates, fades before clutter
 
 type CountryFeature = { type: string; properties: Record<string, unknown>; geometry: unknown };
 
@@ -101,11 +101,12 @@ export function Globe({ pulses }: Props) {
         .labelLat((d) => (d as LivePulse).lat)
         .labelLng((d) => (d as LivePulse).lng)
         .labelText((d) => (d as LivePulse).repo)
-        .labelSize(0.9)
+        .labelSize(1.5)
         .labelDotRadius(0)
-        .labelColor(() => "rgba(254,243,199,0.95)")
-        .labelResolution(3)
-        .labelAltitude(0.04);
+        .labelColor(() => "rgba(253,230,138,0.95)")
+        .labelResolution(4)
+        .labelAltitude(0.06)
+        .labelsTransitionDuration(400);
 
       const mat = globe.globeMaterial() as MeshPhongMaterial;
       mat.color = new THREE.Color(0x13131a);
@@ -227,7 +228,7 @@ export function Globe({ pulses }: Props) {
   }, [pulses]);
 
   return (
-    <section className="relative border-r border-line overflow-hidden hidden lg:block w-[28.57%] shrink-0">
+    <section className="relative overflow-hidden flex-1 min-h-0">
       <div
         className="absolute inset-0"
         style={{

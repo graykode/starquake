@@ -1,17 +1,27 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { Leaderboard, LivePulse, Pulse, ServerMessage, TimeSeriesPoint } from "@/lib/types";
+import type {
+  Leaderboard,
+  LiveEvent,
+  LivePulse,
+  Pulse,
+  ServerMessage,
+  TimeSeriesPoint,
+  WatchEvent,
+} from "@/lib/types";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080/ws";
 const TRACK_TOP_N = 20;
 const SERIES_CAP = 720; // ~12 minutes at 1 snapshot/sec
 const PULSE_CAP = 40; // most recent N pulses on the globe
+const EVENT_CAP = 30; // rolling event-log buffer size
 
 export type LeaderboardState = {
   board: Leaderboard | null;
   connected: boolean;
   series: Map<string, TimeSeriesPoint[]>;
   pulses: LivePulse[];
+  events: LiveEvent[];
 };
 
 export function useLeaderboard(enabled: boolean = true): LeaderboardState {
@@ -19,6 +29,7 @@ export function useLeaderboard(enabled: boolean = true): LeaderboardState {
   const [connected, setConnected] = useState(false);
   const [series, setSeries] = useState<Map<string, TimeSeriesPoint[]>>(new Map());
   const [pulses, setPulses] = useState<LivePulse[]>([]);
+  const [events, setEvents] = useState<LiveEvent[]>([]);
   const seriesRef = useRef(series);
   seriesRef.current = series;
 
@@ -29,6 +40,7 @@ export function useLeaderboard(enabled: boolean = true): LeaderboardState {
       setBoard(null);
       setConnected(false);
       setPulses([]);
+      setEvents([]);
       return;
     }
 
@@ -50,6 +62,16 @@ export function useLeaderboard(enabled: boolean = true): LeaderboardState {
             setPulses((prev) => [
               ...prev.slice(-(PULSE_CAP - 1)),
               { lat: p.lat, lng: p.lng, repo: p.repo, actor: p.actor, at: Date.now() },
+            ]);
+            return;
+          }
+
+          if (msg.type === "watch_event") {
+            const w = msg as WatchEvent;
+            const parsed = Date.parse(w.at);
+            setEvents((prev) => [
+              { repo: w.repo, actor: w.actor, at: Number.isFinite(parsed) ? parsed : Date.now() },
+              ...prev.slice(0, EVENT_CAP - 1),
             ]);
             return;
           }
@@ -92,5 +114,5 @@ export function useLeaderboard(enabled: boolean = true): LeaderboardState {
     };
   }, [enabled]);
 
-  return { board, connected, series, pulses };
+  return { board, connected, series, pulses, events };
 }

@@ -6,7 +6,9 @@
 //! - Subsequent messages are periodic full snapshots (Phase 2 simplification —
 //!   delta-only broadcasts land in a later phase once the payload becomes a concern).
 //!
-//! Raw events are never exposed over the socket.
+//! The raw event firehose is never exposed. `watch_event` messages are a
+//! minimal sampled subset (repo + actor + broadcast-at) throttled to ≤5/sec
+//! at the ingest site.
 
 use crate::state::{AppState, ServerMessage};
 use axum::{

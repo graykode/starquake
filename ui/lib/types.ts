@@ -28,7 +28,16 @@ export type Pulse = {
   lng: number;
 };
 
-export type ServerMessage = Leaderboard | Pulse;
+export type WatchEvent = {
+  type: "watch_event";
+  repo: string;
+  actor: string;
+  at: string;
+};
+
+export type ServerMessage = Leaderboard | Pulse | WatchEvent;
+
+export type LiveEvent = { repo: string; actor: string; at: number };
 
 // /history?date=YYYY-MM-DD response. Past dates come from `daily_top`; today
 // comes from the live counter — same shape either way so the UI can render

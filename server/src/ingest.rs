@@ -9,7 +9,7 @@
 //! - Emit each surviving `WatchEvent` as a structured tracing log line.
 
 use crate::locate::LocateRequest;
-use crate::state::AppState;
+use crate::state::{AppState, ServerMessage};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, ETAG, IF_NONE_MATCH, USER_AGENT};
@@ -97,6 +97,9 @@ pub async fn run(
     let mut etags: HashMap<u8, String> = HashMap::new();
     let mut dedup = Dedup::new(DEDUP_CAPACITY);
     let poll_interval_secs = BASE_POLL_SECS;
+    // watch_event WS broadcast is throttled to ≤5/sec per CLAUDE.md — the raw
+    // firehose must not be exposed. 200ms minimum gap enforces the cap.
+    let mut last_watch_broadcast = Instant::now() - Duration::from_secs(1);
     // Log a rate-limit summary at info every ~60s (720 ticks/hr → roughly
     // every 12 ticks), and always at warn when remaining dips below 500.
     // Rule 17 wants headroom surfaced, not buried in debug.
@@ -238,6 +241,14 @@ pub async fn run(
                     created_at = %ev.created_at.to_rfc3339(),
                     "watch_event"
                 );
+                if last_watch_broadcast.elapsed() >= Duration::from_millis(200) {
+                    last_watch_broadcast = Instant::now();
+                    let _ = state.tx.send(ServerMessage::WatchEvent {
+                        repo: ev.repo.name.clone(),
+                        actor: ev.actor.login.clone(),
+                        at: Utc::now().to_rfc3339(),
+                    });
+                }
                 // try_send: if the locate queue is full we drop — locate is a best-effort
                 // side-channel; it must not backpressure the main ingest loop.
                 let _ = locate_tx.try_send(LocateRequest {

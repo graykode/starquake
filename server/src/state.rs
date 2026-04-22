@@ -84,6 +84,11 @@ pub enum ServerMessage {
         lat: f64,
         lng: f64,
     },
+    WatchEvent {
+        repo: String,
+        actor: String,
+        at: String,
+    },
 }
 
 /// Cached user-location result. `None` means we already looked the user up and

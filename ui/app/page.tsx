@@ -2,6 +2,7 @@
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { BarRace } from "@/components/BarRace";
+import { EventLog } from "@/components/EventLog";
 import { HoverCard } from "@/components/HoverCard";
 import { LeaderboardList } from "@/components/LeaderboardList";
 import { TopBar } from "@/components/TopBar";
@@ -120,7 +121,10 @@ export default function Page() {
       />
 
       <main className="flex-1 min-h-0 flex">
-        <Globe pulses={globePulses} />
+        <section className="hidden lg:flex lg:flex-col w-[28.57%] shrink-0 border-r border-line min-h-0">
+          <Globe pulses={globePulses} />
+          <EventLog events={inHistory ? [] : live.events} paused={inHistory} />
+        </section>
 
         <section className="flex-1 min-w-0 flex flex-col bg-panel">
           <div className="px-5 pt-4 pb-2 border-b border-line">
