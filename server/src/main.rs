@@ -7,10 +7,10 @@ mod state;
 mod ws;
 
 use anyhow::Result;
-use axum::{routing::get, Router};
+use axum::{http::HeaderValue, routing::get, Router};
 use state::AppState;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[tokio::main]
@@ -35,11 +35,32 @@ async fn main() -> Result<()> {
         "starquake server starting"
     );
 
+    let cors = match &cfg.allowed_origins {
+        Some(origins) => {
+            let parsed: Vec<HeaderValue> = origins
+                .iter()
+                .filter_map(|o| match HeaderValue::from_str(o) {
+                    Ok(v) => Some(v),
+                    Err(e) => {
+                        tracing::warn!(origin = %o, error = %e, "skipping invalid CORS origin");
+                        None
+                    }
+                })
+                .collect();
+            tracing::info!(allowed_origins = ?origins, "CORS: restricted");
+            CorsLayer::new().allow_origin(AllowOrigin::list(parsed))
+        }
+        None => {
+            tracing::warn!("CORS: permissive (no CORS_ALLOWED_ORIGINS set) — fine for dev only");
+            CorsLayer::permissive()
+        }
+    };
+
     let app = Router::new()
         .route("/ws", get(ws::ws_handler))
         .route("/health", get(|| async { "ok" }))
         .with_state(state.clone())
-        .layer(CorsLayer::permissive());
+        .layer(cors);
 
     // Bind 0.0.0.0 in production so Railway's ingress can reach us; localhost works fine
     // for dev too. PORT is honored (Railway injects it, dev falls back to config default).

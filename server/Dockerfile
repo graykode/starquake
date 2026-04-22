@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM rust:1.83-slim-bookworm AS builder
+FROM rust:1.88-slim-bookworm AS builder
 WORKDIR /app
 
 # Install build deps for reqwest (rustls requires no openssl, but curl/git for cargo registry)
