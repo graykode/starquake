@@ -97,6 +97,10 @@ pub async fn run(
     let mut etags: HashMap<u8, String> = HashMap::new();
     let mut dedup = Dedup::new(DEDUP_CAPACITY);
     let poll_interval_secs = BASE_POLL_SECS;
+    // Log a rate-limit summary at info every ~60s (720 ticks/hr → roughly
+    // every 12 ticks), and always at warn when remaining dips below 500.
+    // Rule 17 wants headroom surfaced, not buried in debug.
+    let mut rate_log_countdown: u32 = 0;
 
     tracing::info!(interval_secs = poll_interval_secs, "ingest loop starting");
 
@@ -127,17 +131,27 @@ pub async fn run(
                 }
             };
 
-            // Log rate-limit headroom once per tick (page 1).
+            // Rule 17: headroom is load-bearing — info every ~60s, warn when tight.
             if page == 1 {
                 if let (Some(rem), Some(limit)) = (
                     header_u32(&resp, "x-ratelimit-remaining"),
                     header_u32(&resp, "x-ratelimit-limit"),
                 ) {
-                    tracing::debug!(remaining = rem, limit = limit, "rate_limit");
+                    if rem < 500 {
+                        tracing::warn!(
+                            remaining = rem,
+                            limit = limit,
+                            "rate_limit low headroom"
+                        );
+                    } else if rate_log_countdown == 0 {
+                        tracing::info!(remaining = rem, limit = limit, "rate_limit");
+                        rate_log_countdown = 12;
+                    } else {
+                        rate_log_countdown -= 1;
+                    }
                 }
-                // X-Poll-Interval is advisory (defaults to 60s) — we log it for visibility but
-                // don't use it to override our cadence. Our real constraint is the 5000 req/hr
-                // budget, which we track via X-RateLimit-Remaining and back off on 403 / 429 only.
+                // X-Poll-Interval stays debug — advisory, logged for visibility only. Our
+                // real constraint is the 5000 req/hr budget (see rate_limit above).
                 if let Some(pi) = header_u64(&resp, "x-poll-interval") {
                     tracing::debug!(advisory_secs = pi, "x-poll-interval (advisory, ignored)");
                 }
