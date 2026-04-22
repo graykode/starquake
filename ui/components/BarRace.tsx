@@ -1,7 +1,7 @@
 "use client";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import type { Entry } from "@/lib/types";
+import type { Entry, Tier } from "@/lib/types";
 
 const LINE_PALETTE = [
   "#fbbf24",
@@ -17,9 +17,13 @@ type Props = {
   entries: Entry[];
   hoverRepo: string | null;
   onHover: (repo: string | null) => void;
+  // When set, rows whose tier is not included are rendered dimmed (not hidden)
+  // so the top-6 stack still reflects the full projection — matching the
+  // "chart stays whole, list filters" behavior.
+  activeTiers?: Set<Tier>;
 };
 
-export function BarRace({ entries, hoverRepo, onHover }: Props) {
+export function BarRace({ entries, hoverRepo, onHover, activeTiers }: Props) {
   const top = entries.slice(0, TOP_N);
   const leaderStars = top[0]?.stars ?? 1;
 
@@ -69,7 +73,8 @@ export function BarRace({ entries, hoverRepo, onHover }: Props) {
           const pct = Math.max(MIN_BAR_PCT, (e.stars / leaderStars) * 100);
           const name = e.repo.split("/")[1] ?? e.repo;
           const hi = hoverRepo ? hoverRepo === e.repo : e.rank === 1;
-          const dim = hoverRepo != null && hoverRepo !== e.repo;
+          const filteredOut = activeTiers != null && e.tier != null && !activeTiers.has(e.tier);
+          const dim = (hoverRepo != null && hoverRepo !== e.repo) || filteredOut;
           const isFlashing = flash.has(e.repo);
 
           return (

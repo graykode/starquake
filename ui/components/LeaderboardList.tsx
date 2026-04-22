@@ -35,6 +35,7 @@ function tierBadge(tier: Tier | undefined) {
   if (tier === "fresh") {
     return {
       label: "fresh",
+      tip: "No top-100 appearance in the last 30 UTC days — a potential new gem.",
       className:
         "text-[9px] uppercase tracking-wider font-medium px-1.5 py-px rounded border border-accent/40 text-accent bg-accent/10",
     };
@@ -42,6 +43,7 @@ function tierBadge(tier: Tier | undefined) {
   if (tier === "streak") {
     return {
       label: "streak",
+      tip: "On a run — top-100 for 3+ consecutive UTC days including today.",
       className:
         "text-[9px] uppercase tracking-wider font-medium px-1.5 py-px rounded border border-sky-400/30 text-sky-300 bg-sky-400/10",
     };
@@ -53,9 +55,15 @@ type Props = {
   entries: Entry[];
   hoverRepo: string | null;
   onHover: (repo: string | null, x: number, y: number) => void;
+  activeTiers?: Set<Tier>;
 };
 
-export function LeaderboardList({ entries, hoverRepo, onHover }: Props) {
+export function LeaderboardList({ entries, hoverRepo, onHover, activeTiers }: Props) {
+  // Filter by tier when a filter is active. Entries without a tier (history
+  // mode) are always visible — the filter chips are only shown live anyway.
+  const visible = activeTiers
+    ? entries.filter((e) => !e.tier || activeTiers.has(e.tier))
+    : entries;
   // Track stars-on-last-snapshot per repo so we can flash rows that just gained stars.
   const prevStarsRef = useRef<Map<string, number>>(new Map());
   const [flashRepos, setFlashRepos] = useState<Map<string, number>>(new Map());
@@ -101,7 +109,7 @@ export function LeaderboardList({ entries, hoverRepo, onHover }: Props) {
       </div>
       <div className="overflow-y-auto flex-1">
         <AnimatePresence initial={false}>
-          {entries.map((e) => {
+          {visible.map((e) => {
             const hot = hoverRepo === e.repo;
             const color = e.rank <= 10 ? LINE_PALETTE[e.rank - 1] : "#2a2a32";
             const [owner, ...nameRest] = e.repo.split("/");
@@ -164,7 +172,12 @@ export function LeaderboardList({ entries, hoverRepo, onHover }: Props) {
                       <span>{name}</span>
                     </span>
                     {badge && (
-                      <span className={badge.className + " shrink-0"}>{badge.label}</span>
+                      <span
+                        className={`${badge.className} shrink-0 cursor-help`}
+                        title={badge.tip}
+                      >
+                        {badge.label}
+                      </span>
                     )}
                   </div>
                   {e.description && (

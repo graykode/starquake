@@ -30,6 +30,31 @@ function shiftDate(iso: string, days: number): string {
   return `${yy}-${mm}-${dd}`;
 }
 
+const ALL_TIERS: Tier[] = ["fresh", "streak", "returning"];
+const TIER_META: Record<Tier, { label: string; tip: string; dot: string; active: string; inactive: string }> = {
+  fresh: {
+    label: "fresh",
+    tip: "No top-100 appearance in the last 30 UTC days — a potential new gem.",
+    dot: "bg-accent",
+    active: "border-accent/40 text-accent bg-accent/10",
+    inactive: "border-line text-muted hover:text-fg/80",
+  },
+  streak: {
+    label: "streak",
+    tip: "On a run — top-100 for 3+ consecutive UTC days including today.",
+    dot: "bg-sky-400",
+    active: "border-sky-400/30 text-sky-300 bg-sky-400/10",
+    inactive: "border-line text-muted hover:text-fg/80",
+  },
+  returning: {
+    label: "returning",
+    tip: "Back again — appeared in daily_top in the last 30 days, not on a current streak.",
+    dot: "bg-white/40",
+    active: "border-white/20 text-fg/80 bg-white/5",
+    inactive: "border-line text-muted hover:text-fg/80",
+  },
+};
+
 export default function Page() {
   // null = live (today, via WebSocket). Non-null = static (past UTC date, via /history).
   const [viewingDate, setViewingDate] = useState<string | null>(null);
@@ -40,6 +65,24 @@ export default function Page() {
 
   const [hoverRepo, setHoverRepo] = useState<string | null>(null);
   const [hoverXY, setHoverXY] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Tier filter — live mode only. All tiers on by default; clicking a chip
+  // toggles it off/on. Hides filtered rows in the `#` list; BarRace keeps them
+  // but dims them so the top-6 stack still reflects the full projection.
+  const [activeTiers, setActiveTiers] = useState<Set<Tier>>(
+    () => new Set(ALL_TIERS),
+  );
+  const toggleTier = (t: Tier) =>
+    setActiveTiers((prev) => {
+      const next = new Set(prev);
+      if (next.has(t)) {
+        if (next.size === 1) return prev; // never let user hide everything
+        next.delete(t);
+      } else {
+        next.add(t);
+      }
+      return next;
+    });
 
   const inHistory = viewingDate !== null;
   const entries: Entry[] = inHistory
@@ -137,10 +180,48 @@ export default function Page() {
                 </button>
               </div>
             </div>
-            <div className="mt-1.5 text-[11px] text-muted">
-              {inHistory
-                ? "Static end-of-day snapshot · no live pulses · UTC date boundary."
-                : "Observed public WatchEvents · ~30s–5min behind actual · counter resets at 00:00."}
+            <div className="mt-1.5 flex items-center gap-3 flex-wrap">
+              <div className="text-[11px] text-muted">
+                {inHistory
+                  ? "Static end-of-day snapshot · no live pulses · UTC date boundary."
+                  : "Observed public WatchEvents · ~30s–5min behind actual · counter resets at 00:00."}
+              </div>
+              {!inHistory && (
+                <>
+                  <div className="flex-1" />
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-muted/70">
+                      tier
+                    </span>
+                    {ALL_TIERS.map((t) => {
+                      const meta = TIER_META[t];
+                      const on = activeTiers.has(t);
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => toggleTier(t)}
+                          className={`group/chip relative inline-flex items-center gap-1 rounded border px-1.5 py-px font-mono text-[9.5px] uppercase tracking-wider transition-colors ${
+                            on ? meta.active : meta.inactive
+                          }`}
+                          aria-pressed={on}
+                        >
+                          <span
+                            className={`inline-block w-1.5 h-1.5 rounded-full ${meta.dot} ${on ? "" : "opacity-40"}`}
+                          />
+                          <span className={on ? "" : "opacity-70"}>{meta.label}</span>
+                          <span
+                            role="tooltip"
+                            className="pointer-events-none absolute right-0 top-full mt-1 z-30 w-56 rounded border border-line bg-bg/95 px-2 py-1.5 text-[10.5px] normal-case tracking-normal font-normal text-fg/90 shadow-lg opacity-0 -translate-y-0.5 transition-all duration-150 group-hover/chip:opacity-100 group-hover/chip:translate-y-0"
+                          >
+                            {meta.tip}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -154,6 +235,7 @@ export default function Page() {
             entries={entries}
             hoverRepo={hoverRepo}
             onHover={(r) => setHoverRepo(r)}
+            activeTiers={inHistory ? undefined : activeTiers}
           />
           <div className="border-b border-line" />
 
@@ -165,6 +247,7 @@ export default function Page() {
               setHoverRepo(repo);
               if (repo) setHoverXY({ x, y });
             }}
+            activeTiers={inHistory ? undefined : activeTiers}
           />
 
           <TopicCloud entries={entries} />
