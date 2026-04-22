@@ -1,0 +1,61 @@
+name: Deploy UI to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ui/**"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install deps (workspace root)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build static UI
+        run: pnpm --filter starquake-ui build
+        env:
+          # Provided via repo → Settings → Secrets and variables → Actions.
+          # If absent, the UI falls back to ws://localhost:8080/ws (dev default)
+          # and the deployed page will fail to connect — set the secret after
+          # the Rust server is deployed to Railway.
+          NEXT_PUBLIC_WS_URL: ${{ secrets.NEXT_PUBLIC_WS_URL }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ui/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -2,6 +2,7 @@ node_modules/
 dist/
 target/
 .next/
+out/
 .env
 *.tsbuildinfo
 coverage/

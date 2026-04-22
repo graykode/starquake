@@ -1,10 +1,12 @@
 import type { NextConfig } from "next";
 
+// GitHub Pages deploy: static export under `graykode.github.io/starquake/`.
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  // Standalone output emits a self-contained server + minimal node_modules so the
-  // Docker runtime image doesn't need `pnpm install` or the monorepo context.
-  output: "standalone",
+  output: "export",
+  basePath: "/starquake",
+  trailingSlash: true,
+  images: { unoptimized: true },
 };
 
 export default nextConfig;
