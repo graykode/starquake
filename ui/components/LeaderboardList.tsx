@@ -110,14 +110,14 @@ export function LeaderboardList({ entries, hoverRepo, onHover, activeTiers }: Pr
   }, [entries]);
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
+    <div className="flex flex-col lg:flex-1 lg:min-h-0">
       <div className="px-5 py-2.5 border-b border-line flex items-center gap-4 font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted">
         <span className="w-8">#</span>
         <span className="flex-1">repository</span>
         <span className="w-16 text-right">lang</span>
         <span className="w-20 text-right">today</span>
       </div>
-      <div className="overflow-y-auto flex-1">
+      <div className="lg:overflow-y-auto lg:flex-1">
         <AnimatePresence initial={false}>
           {visible.map((e, i) => {
             // Renumber within the filtered view so ranks show as 1..N (and

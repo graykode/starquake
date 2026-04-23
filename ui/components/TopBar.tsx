@@ -8,12 +8,12 @@ type Props = {
   totalStars: number;
 };
 
-type Clock = { local: string; utc: string; tz: string };
+type Clock = { local: string; tz: string };
 
 const REPO = "graykode/starquake";
 
 export function TopBar({ connected, utcDate, totalRepos, totalStars }: Props) {
-  const [clock, setClock] = useState<Clock>({ local: "", utc: "", tz: "" });
+  const [clock, setClock] = useState<Clock>({ local: "", tz: "" });
   const [repoStars, setRepoStars] = useState<number | null>(null);
 
   useEffect(() => {
@@ -21,12 +21,11 @@ export function TopBar({ connected, utcDate, totalRepos, totalStars }: Props) {
     const fmt = () => {
       const d = new Date();
       const local = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-      const utc = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
       const tz =
         Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
           .formatToParts(d)
           .find((p) => p.type === "timeZoneName")?.value ?? "";
-      setClock({ local, utc, tz });
+      setClock({ local, tz });
     };
     fmt();
     const id = setInterval(fmt, 1000);
@@ -100,9 +99,6 @@ export function TopBar({ connected, utcDate, totalRepos, totalStars }: Props) {
       <div className="font-mono tabular-nums text-[13px] flex items-center gap-2">
         <span className="text-fg">{clock.local}</span>
         {clock.tz && <span className="text-muted text-[10.5px] uppercase tracking-wider">{clock.tz}</span>}
-        <span className="text-line">·</span>
-        <span className="text-dim">{clock.utc}</span>
-        <span className="text-muted text-[10.5px] uppercase tracking-wider">UTC</span>
       </div>
 
       <div className="h-5 w-px bg-line" />
