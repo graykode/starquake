@@ -54,13 +54,25 @@ export function EventLog({ events, paused }: Props) {
               >
                 <span className="text-muted/70 shrink-0">{fmtLocalTime(ev.at)}</span>
                 <span className="text-accent/90 shrink-0">↑</span>
-                <span className="text-fg/90 truncate max-w-[45%]" title={ev.repo}>
+                <a
+                  href={`https://github.com/${ev.repo}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-fg/90 truncate max-w-[45%] hover:text-accent hover:underline"
+                  title={ev.repo}
+                >
                   {ev.repo}
-                </span>
+                </a>
                 <span className="text-muted/60 shrink-0">←</span>
-                <span className="text-muted truncate" title={ev.actor}>
+                <a
+                  href={`https://github.com/${ev.actor}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-muted truncate hover:text-accent hover:underline"
+                  title={ev.actor}
+                >
                   {ev.actor}
-                </span>
+                </a>
               </li>
             ))}
           </ol>
