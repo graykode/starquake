@@ -17,14 +17,17 @@ type Props = {
   entries: Entry[];
   hoverRepo: string | null;
   onHover: (repo: string | null) => void;
-  // When set, rows whose tier is not included are rendered dimmed (not hidden)
-  // so the top-6 stack still reflects the full projection — matching the
-  // "chart stays whole, list filters" behavior.
+  // When set, entries whose tier is not included are filtered out before
+  // picking the top 6 — mirrors the `#` list so the chart and list agree on
+  // which repos are in view.
   activeTiers?: Set<Tier>;
 };
 
 export function BarRace({ entries, hoverRepo, onHover, activeTiers }: Props) {
-  const top = entries.slice(0, TOP_N);
+  const pool = activeTiers
+    ? entries.filter((e) => !e.tier || activeTiers.has(e.tier))
+    : entries;
+  const top = pool.slice(0, TOP_N);
   const leaderStars = top[0]?.stars ?? 1;
 
   const prevRef = useRef<Map<string, number>>(new Map());
@@ -73,8 +76,7 @@ export function BarRace({ entries, hoverRepo, onHover, activeTiers }: Props) {
           const pct = Math.max(MIN_BAR_PCT, (e.stars / leaderStars) * 100);
           const name = e.repo.split("/")[1] ?? e.repo;
           const hi = hoverRepo ? hoverRepo === e.repo : e.rank === 1;
-          const filteredOut = activeTiers != null && e.tier != null && !activeTiers.has(e.tier);
-          const dim = (hoverRepo != null && hoverRepo !== e.repo) || filteredOut;
+          const dim = hoverRepo != null && hoverRepo !== e.repo;
           const isFlashing = flash.has(e.repo);
 
           return (
