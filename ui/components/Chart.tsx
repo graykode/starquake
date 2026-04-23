@@ -267,5 +267,5 @@ export function Chart({ topEntries, series, hoverRepo, onHover }: Props) {
 function formatTime(ms: number): string {
   const d = new Date(ms);
   const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
