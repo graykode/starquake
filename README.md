@@ -4,7 +4,7 @@ Near-real-time GitHub stargazing dashboard. Each star action becomes a tremor on
 
 **Live**: [graykode.github.io/starquake](https://graykode.github.io/starquake/)
 
-![starquake — live dashboard](docs/hero.png)
+![starquake — live dashboard](docs/demo.gif)
 
 ## What it does
 
