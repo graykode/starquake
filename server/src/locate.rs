@@ -169,7 +169,7 @@ async fn fetch_location(
 }
 
 fn broadcast_pulse(state: &Arc<AppState>, req: &LocateRequest, lat: f64, lng: f64) {
-    let _ = state.tx.send(ServerMessage::Pulse {
+    state.broadcast(&ServerMessage::Pulse {
         repo: req.repo.clone(),
         actor: req.actor.clone(),
         lat,

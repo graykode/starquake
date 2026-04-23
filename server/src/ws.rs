@@ -9,11 +9,17 @@
 //! The raw event firehose is never exposed. `watch_event` messages are a
 //! minimal sampled subset (repo + actor + broadcast-at) throttled to ≤5/sec
 //! at the ingest site.
+//!
+//! Wire format is **gzipped JSON sent as a binary frame**. The JSON body is
+//! identical to the pre-compression shape; only the transport changes. The
+//! browser decompresses via `DecompressionStream("gzip")`. Compression is the
+//! biggest single egress lever for starquake (leaderboard snapshots are ~85%
+//! redundant JSON keys and compress to ~15–25% of their uncompressed size).
 
-use crate::state::{AppState, ServerMessage};
+use crate::state::{encode_frame, AppState};
 use axum::{
     extract::{
-        ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade},
+        ws::{Message, WebSocket, WebSocketUpgrade},
         State,
     },
     response::IntoResponse,
@@ -42,7 +48,8 @@ async fn ws_connection(socket: WebSocket, state: Arc<AppState>) {
 
     // initial snapshot
     let snap = state.snapshot(TOP_N).await;
-    if let Err(e) = send_json(&mut sender, &snap).await {
+    let initial = encode_frame(&snap);
+    if let Err(e) = send_binary(&mut sender, &initial).await {
         tracing::debug!(error = %e, "failed to send initial snapshot, closing");
         return;
     }
@@ -61,15 +68,16 @@ async fn ws_connection(socket: WebSocket, state: Arc<AppState>) {
             }
             broadcast_result = rx.recv() => {
                 match broadcast_result {
-                    Ok(msg) => {
-                        if send_json(&mut sender, &msg).await.is_err() {
+                    Ok(frame) => {
+                        if send_binary(&mut sender, &frame).await.is_err() {
                             break;
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         tracing::warn!(missed = n, "ws client lagged, sending fresh snapshot");
                         let fresh = state.snapshot(TOP_N).await;
-                        if send_json(&mut sender, &fresh).await.is_err() {
+                        let fresh_frame = encode_frame(&fresh);
+                        if send_binary(&mut sender, &fresh_frame).await.is_err() {
                             break;
                         }
                     }
@@ -82,12 +90,14 @@ async fn ws_connection(socket: WebSocket, state: Arc<AppState>) {
     tracing::info!("ws client disconnected");
 }
 
-async fn send_json<S>(sender: &mut S, msg: &ServerMessage) -> Result<(), axum::Error>
+async fn send_binary<S>(sender: &mut S, frame: &[u8]) -> Result<(), axum::Error>
 where
     S: SinkExt<Message, Error = axum::Error> + Unpin,
 {
-    let json = serde_json::to_string(msg).map_err(axum::Error::new)?;
-    sender.send(Message::Text(Utf8Bytes::from(json))).await
+    // `Bytes` owns its buffer, so we copy once per subscriber send — the
+    // upstream frame is shared via `Arc<Vec<u8>>`, but WebSocket sink queues
+    // must own their payload.
+    sender.send(Message::binary(frame.to_vec())).await
 }
 
 /// Periodic broadcast loop — emits a fresh full leaderboard snapshot every second.
@@ -98,7 +108,8 @@ pub async fn broadcast_loop(state: Arc<AppState>) {
     loop {
         interval.tick().await;
         let snap = state.snapshot(TOP_N).await;
-        // broadcast errors only when there are zero receivers — ignore.
-        let _ = state.tx.send(snap);
+        // Encode once; the Arc is cloned per subscriber.
+        let _ = state.tx.send(encode_frame(&snap));
     }
 }
+

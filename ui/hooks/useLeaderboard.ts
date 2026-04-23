@@ -1,5 +1,4 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
 import type {
   Leaderboard,
   LiveEvent,
@@ -9,8 +8,15 @@ import type {
   TimeSeriesPoint,
   WatchEvent,
 } from "@/lib/types";
+import { useEffect, useRef, useState } from "react";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080/ws";
+
+async function decompressGzip(buf: ArrayBuffer): Promise<string> {
+  const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return await new Response(stream).text();
+}
+
 const TRACK_TOP_N = 20;
 const SERIES_CAP = 720; // ~12 minutes at 1 snapshot/sec
 const PULSE_CAP = 40; // most recent N pulses on the globe
@@ -24,7 +30,7 @@ export type LeaderboardState = {
   events: LiveEvent[];
 };
 
-export function useLeaderboard(enabled: boolean = true): LeaderboardState {
+export function useLeaderboard(enabled = true): LeaderboardState {
   const [board, setBoard] = useState<Leaderboard | null>(null);
   const [connected, setConnected] = useState(false);
   const [series, setSeries] = useState<Map<string, TimeSeriesPoint[]>>(new Map());
@@ -52,10 +58,14 @@ export function useLeaderboard(enabled: boolean = true): LeaderboardState {
     const connect = () => {
       if (cancelled) return;
       ws = new WebSocket(WS_URL);
+      // Server sends gzip-compressed JSON as binary frames (egress reduction —
+      // leaderboard snapshots compress to ~15–25% of their JSON size).
+      ws.binaryType = "arraybuffer";
       ws.onopen = () => setConnected(true);
-      ws.onmessage = (e) => {
+      ws.onmessage = async (e) => {
         try {
-          const msg = JSON.parse(e.data) as ServerMessage;
+          const text = e.data instanceof ArrayBuffer ? await decompressGzip(e.data) : (e.data as string);
+          const msg = JSON.parse(text) as ServerMessage;
 
           if (msg.type === "pulse") {
             const p = msg as Pulse;

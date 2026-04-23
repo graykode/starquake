@@ -243,7 +243,7 @@ pub async fn run(
                 );
                 if last_watch_broadcast.elapsed() >= Duration::from_millis(200) {
                     last_watch_broadcast = Instant::now();
-                    let _ = state.tx.send(ServerMessage::WatchEvent {
+                    state.broadcast(&ServerMessage::WatchEvent {
                         repo: ev.repo.name.clone(),
                         actor: ev.actor.login.clone(),
                         at: Utc::now().to_rfc3339(),

@@ -23,12 +23,29 @@
 
 use anyhow::{Context, Result};
 use chrono::{Duration as ChronoDuration, NaiveDate, Utc};
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use serde::Serialize;
 use sqlx::PgPool;
 use std::collections::HashMap;
+use std::io::Write;
+use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 
 const BROADCAST_CHANNEL_CAPACITY: usize = 64;
+
+/// Serialize a `ServerMessage` to JSON and gzip-compress the result. The
+/// frame is sent verbatim as a WebSocket binary payload; the UI decompresses
+/// via `DecompressionStream("gzip")` before parsing. Egress (not CPU) is the
+/// load-bearing cost for WS fanout, and the leaderboard snapshot compresses
+/// to ~15–25% of its JSON size.
+pub fn encode_frame(msg: &ServerMessage) -> Arc<Vec<u8>> {
+    let json = serde_json::to_vec(msg).expect("ServerMessage is always serializable");
+    let mut encoder = GzEncoder::new(Vec::with_capacity(json.len() / 3), Compression::default());
+    encoder.write_all(&json).expect("in-memory write never fails");
+    let compressed = encoder.finish().expect("in-memory finish never fails");
+    Arc::new(compressed)
+}
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct RepoMeta {
@@ -106,7 +123,7 @@ pub struct AppState {
     meta: RwLock<HashMap<String, RepoMeta>>,
     user_location: RwLock<HashMap<String, UserLocation>>,
     db: Option<PgPool>,
-    pub tx: broadcast::Sender<ServerMessage>,
+    pub tx: broadcast::Sender<Arc<Vec<u8>>>,
 }
 
 impl AppState {
@@ -246,6 +263,12 @@ impl AppState {
 
         tracing::debug!(utc_date = %today, rows = repos.len(), "counter snapshot written");
         Ok(())
+    }
+
+    /// Encode `msg` once and fan it out to all WS subscribers. Send errors
+    /// only surface when no receivers are attached — ignored on purpose.
+    pub fn broadcast(&self, msg: &ServerMessage) {
+        let _ = self.tx.send(encode_frame(msg));
     }
 
     pub async fn user_location(&self, login: &str) -> Option<UserLocation> {
