@@ -71,11 +71,15 @@ export function BarRace({ entries, hoverRepo, onHover, activeTiers }: Props) {
   return (
     <div className="px-5 py-3 flex flex-col gap-1.5 relative">
       <AnimatePresence initial={false}>
-        {top.map((e) => {
-          const color = LINE_PALETTE[e.rank - 1] ?? "#4a4a52";
+        {top.map((e, i) => {
+          // Renumber within the filtered view so ranks show as 1..N (and so
+          // the LINE_PALETTE — which only has 10 entries — always resolves to
+          // a real color even when the server's true rank is > 10).
+          const displayRank = i + 1;
+          const color = LINE_PALETTE[displayRank - 1] ?? "#4a4a52";
           const pct = Math.max(MIN_BAR_PCT, (e.stars / leaderStars) * 100);
           const name = e.repo.split("/")[1] ?? e.repo;
-          const hi = hoverRepo ? hoverRepo === e.repo : e.rank === 1;
+          const hi = hoverRepo ? hoverRepo === e.repo : displayRank === 1;
           const dim = hoverRepo != null && hoverRepo !== e.repo;
           const isFlashing = flash.has(e.repo);
 
@@ -100,7 +104,7 @@ export function BarRace({ entries, hoverRepo, onHover, activeTiers }: Props) {
                 className="w-5 font-mono tabular-nums text-[10.5px] text-muted text-right shrink-0"
                 style={{ color: hi ? color : undefined }}
               >
-                {e.rank}
+                {displayRank}
               </span>
 
               {/* bar track */}

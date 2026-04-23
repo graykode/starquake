@@ -119,9 +119,13 @@ export function LeaderboardList({ entries, hoverRepo, onHover, activeTiers }: Pr
       </div>
       <div className="overflow-y-auto flex-1">
         <AnimatePresence initial={false}>
-          {visible.map((e) => {
+          {visible.map((e, i) => {
+            // Renumber within the filtered view so ranks show as 1..N (and
+            // so the LINE_PALETTE lookup always resolves to a real color even
+            // when the server's true rank is > 10).
+            const displayRank = i + 1;
             const hot = hoverRepo === e.repo;
-            const color = e.rank <= 10 ? LINE_PALETTE[e.rank - 1] : "#2a2a32";
+            const color = displayRank <= 10 ? LINE_PALETTE[displayRank - 1] : "#2a2a32";
             const [owner, ...nameRest] = e.repo.split("/");
             const name = nameRest.join("/");
             const langColor = e.language ? LANG_COLORS[e.language] ?? "#999" : null;
@@ -169,7 +173,7 @@ export function LeaderboardList({ entries, hoverRepo, onHover, activeTiers }: Pr
                   />
                 )}
                 <span className="w-8 pt-0.5 font-mono tabular-nums text-muted text-[11px]">
-                  {String(e.rank).padStart(2, "0")}
+                  {String(displayRank).padStart(2, "0")}
                 </span>
                 <span
                   className="inline-block w-1 h-8 rounded-sm shrink-0 mt-0.5"
@@ -213,7 +217,7 @@ export function LeaderboardList({ entries, hoverRepo, onHover, activeTiers }: Pr
                   <motion.span
                     key={e.stars}
                     initial={flash ? { scale: 1.18, color: "#fef3c7" } : false}
-                    animate={{ scale: 1, color: e.rank === 1 ? "#fbbf24" : "#ededed" }}
+                    animate={{ scale: 1, color: displayRank === 1 ? "#fbbf24" : "#ededed" }}
                     transition={{ duration: 0.25 }}
                     className="inline-block"
                   >
