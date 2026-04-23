@@ -67,11 +67,13 @@ export default function Page() {
   const [hoverRepo, setHoverRepo] = useState<string | null>(null);
   const [hoverXY, setHoverXY] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Tier filter — live mode only. All tiers on by default; clicking a chip
-  // toggles it off/on. Hides filtered rows in the `#` list; BarRace keeps them
-  // but dims them so the top-6 stack still reflects the full projection.
+  // Tier filter — live mode only. Defaults to fresh + streak (the gem /
+  // trending buckets); returning is off by default so the first impression
+  // foregrounds CLAUDE.md's fresh-gem emphasis. Hides filtered rows in the
+  // `#` list; BarRace keeps them but dims them so the top-6 stack still
+  // reflects the full projection.
   const [activeTiers, setActiveTiers] = useState<Set<Tier>>(
-    () => new Set(ALL_TIERS),
+    () => new Set<Tier>(["fresh", "streak"]),
   );
   const toggleTier = (t: Tier) =>
     setActiveTiers((prev) => {
