@@ -72,15 +72,15 @@ export function TopBar({ connected, utcDate, totalRepos, totalStars }: Props) {
       <div className="hidden sm:block h-5 w-px bg-line" />
 
       <div
-        className={`font-mono text-[10.5px] uppercase tracking-[0.12em] px-2 py-1 rounded border ${
+        className={`font-mono text-[9px] sm:text-[10.5px] uppercase tracking-[0.1em] sm:tracking-[0.12em] px-1.5 py-0.5 sm:px-2 sm:py-1 rounded border ${
           connected
             ? "text-accent bg-accent/10 border-accent/20"
             : "text-muted bg-white/5 border-line"
         }`}
       >
         {connected ? (
-          <span className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+          <span className="flex items-center gap-1 sm:gap-1.5">
+            <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-accent animate-pulse" />
             live
           </span>
         ) : (
