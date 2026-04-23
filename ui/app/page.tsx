@@ -126,7 +126,7 @@ export default function Page() {
           <EventLog events={inHistory ? [] : live.events} paused={inHistory} />
         </section>
 
-        <section className="flex-1 min-w-0 flex flex-col bg-panel">
+        <section className="flex-1 min-w-0 min-h-0 flex flex-col bg-panel">
           <div className="px-5 pt-4 pb-2 border-b border-line">
             <div className="flex items-center gap-3 flex-wrap">
               <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-muted">
