@@ -110,7 +110,7 @@ export default function Page() {
   const canGoNext = inHistory && viewingDate! < today;
 
   return (
-    <div className="h-screen flex flex-col bg-bg">
+    <div className="h-screen flex flex-col bg-bg overflow-x-hidden">
       <TopBar
         connected={inHistory ? false : live.connected}
         utcDate={displayDate}

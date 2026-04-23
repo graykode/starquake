@@ -55,7 +55,7 @@ export function TopBar({ connected, utcDate, totalRepos, totalStars }: Props) {
   }, []);
 
   return (
-    <header className="h-14 shrink-0 border-b border-line flex items-center px-5 gap-5">
+    <header className="h-14 shrink-0 border-b border-line flex items-center px-4 sm:px-5 gap-3 sm:gap-5">
       <div className="flex items-center gap-2">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path
@@ -69,7 +69,7 @@ export function TopBar({ connected, utcDate, totalRepos, totalStars }: Props) {
         <span className="font-mono text-[13px] tracking-tight font-medium">starquake</span>
       </div>
 
-      <div className="h-5 w-px bg-line" />
+      <div className="hidden sm:block h-5 w-px bg-line" />
 
       <div
         className={`font-mono text-[10.5px] uppercase tracking-[0.12em] px-2 py-1 rounded border ${
@@ -98,10 +98,10 @@ export function TopBar({ connected, utcDate, totalRepos, totalStars }: Props) {
 
       <div className="font-mono tabular-nums text-[13px] flex items-center gap-2">
         <span className="text-fg">{clock.local}</span>
-        {clock.tz && <span className="text-muted text-[10.5px] uppercase tracking-wider">{clock.tz}</span>}
+        {clock.tz && <span className="hidden sm:inline text-muted text-[10.5px] uppercase tracking-wider">{clock.tz}</span>}
       </div>
 
-      <div className="h-5 w-px bg-line" />
+      <div className="hidden sm:block h-5 w-px bg-line" />
 
       <a
         href={`https://github.com/${REPO}`}
