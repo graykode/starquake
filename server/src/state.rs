@@ -443,12 +443,15 @@ impl AppState {
         out
     }
 
-    /// Return the top-100 leaderboard for a finished UTC date from
-    /// `daily_top`, joined with the (current) `repo_metadata` for description /
-    /// language / total_stars. Topics come from the row itself — they were
-    /// frozen at roll time so the history view doesn't drift if a repo later
-    /// retags. Returns empty when the date has no snapshot (pre-launch, data
-    /// loss, or just a date that never had activity).
+    /// Return the top-100 leaderboard for a finished UTC date. Prefer the
+    /// archived `daily_top` snapshot, but fall back to the snapshotted
+    /// `live_counter` rows when the archive has not been rolled yet. That
+    /// keeps "yesterday" visible during roll delays/restarts instead of
+    /// showing an empty history page while older archived days still work.
+    ///
+    /// Archived topics come from `daily_top` so they stay frozen at roll time;
+    /// fallback topics come from current `repo_metadata`. Returns empty when
+    /// neither table has rows (pre-launch, data loss, or no activity).
     pub async fn history_entries(&self, date: NaiveDate) -> Result<Vec<Entry>> {
         let Some(pool) = &self.db else { return Ok(Vec::new()) };
         type HistoryRow = (
@@ -472,6 +475,37 @@ impl AppState {
         .fetch_all(pool)
         .await
         .context("history lookup")?;
+
+        if rows.is_empty() {
+            let fallback_rows: Vec<HistoryRow> = sqlx::query_as(
+                "SELECT lc.repo, lc.stars, COALESCE(rm.topics, '[]'::jsonb), \
+                        rm.description, rm.language, rm.total_stars \
+                 FROM live_counter lc \
+                 LEFT JOIN repo_metadata rm ON rm.full_name = lc.repo \
+                 WHERE lc.utc_date = $1 \
+                 ORDER BY lc.stars DESC, lc.repo ASC \
+                 LIMIT 100",
+            )
+            .bind(date)
+            .fetch_all(pool)
+            .await
+            .context("history live_counter fallback")?;
+
+            return Ok(fallback_rows
+                .into_iter()
+                .enumerate()
+                .map(|(i, (repo, stars, topics, description, language, total_stars))| Entry {
+                    rank: (i as u32) + 1,
+                    repo,
+                    stars: stars.max(0) as u32,
+                    description,
+                    language,
+                    total_stars: total_stars.map(|n| n.max(0) as u32),
+                    topics: topics.0,
+                    tier: None,
+                })
+                .collect());
+        }
 
         Ok(rows
             .into_iter()
